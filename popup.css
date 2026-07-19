@@ -71,6 +71,35 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   color: #f8f9fa;
 }
+.tab-close {
+  background: transparent; border: 1px solid rgba(248,249,250,.4);
+  color: #f8f9fa; font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 6px; cursor: pointer;
+  letter-spacing: .5px; text-transform: uppercase;
+  transition: all .15s ease;
+}
+.tab-close:hover { background: #f8f9fa; color: #212529; }
+
+.tab-meta { display: flex; justify-content: space-between; font-size: 10px; color: rgba(248,249,250,.55); }
+.tab-meta .expired { color: #f8f9fa; font-weight: 700; }
+
+.progress {
+  height: 4px; border-radius: 999px;
+  background: rgba(0,0,0,.35); overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6c757d, #f8f9fa);
+  border-radius: 999px;
+  transition: width .3s ease;
+}
+
+.empty {
+  text-align: center; font-size: 12px;
+  color: rgba(248,249,250,.5);
+  padding: 30px 10px;
+}
+
 .ftr { margin-top: 12px; }
 .reset-btn {
   width: 100%; background: transparent; border: none;
