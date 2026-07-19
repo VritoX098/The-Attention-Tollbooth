@@ -272,6 +272,7 @@
     const cdFill = tollEl.querySelector('#cdFill');
     const cdText = tollEl.querySelector('#cdText');
 
+    // Init slider fill
     const updateSliderBg = (v) => {
       const pct = ((v - 1) / (60 - 1)) * 100;
       slider.style.backgroundSize = `${pct}% 100%`;
@@ -286,7 +287,11 @@
       updateSliderBg(slider.value);
     });
 
-    
+    payBtn.addEventListener('click', async () => {
+      const mins = parseInt(slider.value, 10);
+      await chrome.runtime.sendMessage({ type: 'PAY_TOLL', minutes: mins });
+      dismissToll();
+    });
 
     cdFill.style.transition = `transform ${decisionSeconds}s linear`;
     requestAnimationFrame(() => { cdFill.style.transform = 'scaleX(0)'; });
@@ -308,8 +313,76 @@
     }, decisionSeconds * 1000);
   }
 
+  function dismissToll(showDefault = false) {
+    if (tollTimeout) { clearTimeout(tollTimeout); tollTimeout = null; }
+    if (tollInterval) { clearInterval(tollInterval); tollInterval = null; }
+    if (tollEl) {
+      tollEl.classList.remove('show');
+      tollEl.classList.add('hide');
+      backdropEl?.classList.remove('show');
+      const t = tollEl, b = backdropEl;
+      setTimeout(() => { t?.remove(); b?.remove(); }, 350);
+      tollEl = null; backdropEl = null;
+    }
+    if (showDefault) {
+      const flash = document.createElement('div');
+      flash.className = 'default-flash';
+      flash.textContent = 'Default toll applied: 5 minutes';
+      shadow.appendChild(flash);
+      setTimeout(() => flash.remove(), 2400);
+    }
+  }
 
-  
+  let borderEl = null;
+  let toastEl = null;
+
+  function applyExpiration() {
+    const html = document.documentElement;
+    html.style.transition = 'filter 1.5s ease';
+    html.style.filter = 'grayscale(0.8)';
+
+    if (!borderEl) {
+      borderEl = document.createElement('div');
+      borderEl.className = 'expire-border';
+      shadow.appendChild(borderEl);
+    }
+
+    showToast();
+  }
+
+  function clearExpiration() {
+    document.documentElement.style.filter = '';
+    borderEl?.remove(); borderEl = null;
+    if (toastEl) {
+      toastEl.classList.remove('show');
+      const t = toastEl;
+      setTimeout(() => t.remove(), 300);
+      toastEl = null;
+    }
+  }
+
+  function showToast() {
+    if (toastEl) return;
+    toastEl = document.createElement('div');
+    toastEl.className = 'toast';
+    toastEl.innerHTML = `
+      <div class="toast-title">Attention toll expired</div>
+      <div class="toast-msg">This tab is now loitering on your focus. Evict it, or bribe the tollbooth for five more minutes.</div>
+      <div class="toast-actions">
+        <button class="toast-btn close" id="tClose">Evict Tab</button>
+        <button class="toast-btn extend" id="tExtend">Bribe +5m</button>
+      </div>
+    `;
+    shadow.appendChild(toastEl);
+    requestAnimationFrame(() => toastEl.classList.add('show'));
+
+    toastEl.querySelector('#tClose').addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ type: 'CLOSE_TAB' });
+    });
+    toastEl.querySelector('#tExtend').addEventListener('click', async () => {
+      await chrome.runtime.sendMessage({ type: 'EXTEND' });
+    });
+  }
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'APPLY_EXPIRATION') { applyExpiration(); sendResponse({ ok: true }); }
