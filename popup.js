@@ -32,6 +32,34 @@ async function render() {
     const remaining = Math.max(0, t.expiresAt - data.now);
     const pct = Math.max(0, Math.min(100, (remaining / totalMs) * 100));
 
+    const el = document.createElement('div');
+    el.className = 'tab-item';
+    const favSrc = t.favIconUrl ? t.favIconUrl : '';
+    el.innerHTML = `
+      <div class="tab-row">
+        ${favSrc ? `<img class="tab-fav" src="${favSrc}" alt="" />` : `<div class="tab-fav"></div>`}
+        <div class="tab-title"></div>
+        <button class="tab-close" data-id="${t.id}">Close</button>
+      </div>
+      <div class="progress"><div class="progress-fill" style="width:${pct}%"></div></div>
+      <div class="tab-meta">
+        <span>${t.allocatedMinutes}m allocated</span>
+        <span class="${t.expired || remaining <= 0 ? 'expired' : ''}">${t.expired || remaining <= 0 ? 'Expired' : fmt(remaining) + ' left'}</span>
+      </div>
+    `;
+    el.querySelector('.tab-title').textContent = t.title;
+    list.appendChild(el);
+  }
+
+  list.querySelectorAll('.tab-close').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id, 10);
+      await chrome.runtime.sendMessage({ type: 'CLOSE_TAB', tabId: id });
+      render();
+    });
+  });
+}
+
 document.getElementById('reset').addEventListener('click', async () => {
   await chrome.runtime.sendMessage({ type: 'RESET_ALL_TIMERS' });
   render();
