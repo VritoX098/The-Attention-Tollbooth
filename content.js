@@ -206,6 +206,45 @@
       z-index: 3;
       animation: flashFade 2.2s ease forwards;
     }
+    .countdown-bar {
+      position: fixed; left: 50%; bottom: 14px;
+      transform: translateX(-50%) translateY(20px);
+      opacity: 0;
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: linear-gradient(160deg, rgba(33,37,41,.92), rgba(33,37,41,.78));
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(222,226,230,.20);
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #f8f9fa; font-size: 12px; letter-spacing: .4px;
+      z-index: 2;
+      transition: opacity .3s ease, transform .3s ease, border-color .3s ease, color .3s ease;
+      font-variant-numeric: tabular-nums;
+    }
+    .countdown-bar.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .countdown-bar .cb-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: ${PALETTE.teal};
+      box-shadow: 0 0 8px rgba(173,181,189,.6);
+    }
+    .countdown-bar .cb-label {
+      color: rgba(248,249,250,.6);
+      text-transform: uppercase; font-size: 10px; letter-spacing: 1.2px;
+    }
+    .countdown-bar .cb-time { font-weight: 700; color: ${PALETTE.cyan}; font-size: 13px; }
+    .countdown-bar.warn .cb-dot { background: ${PALETTE.cyan}; animation: cbPulse 1s ease-in-out infinite; }
+    .countdown-bar.warn .cb-time { color: ${PALETTE.pink}; }
+    .countdown-bar.expired { border-color: rgba(248,249,250,.4); }
+    .countdown-bar.expired .cb-dot { background: ${PALETTE.pink}; animation: cbPulse .8s ease-in-out infinite; }
+    .countdown-bar.expired .cb-time { color: ${PALETTE.pink}; }
+    @keyframes cbPulse {
+      0%,100% { transform: scale(1); opacity: 1; }
+      50%     { transform: scale(1.4); opacity: .6; }
+    }
+
     @keyframes flashFade {
       0% { opacity: 0; transform: translateY(10px); }
       15%,70% { opacity: 1; transform: translateY(0); }
@@ -272,7 +311,6 @@
     const cdFill = tollEl.querySelector('#cdFill');
     const cdText = tollEl.querySelector('#cdText');
 
-    // Init slider fill
     const updateSliderBg = (v) => {
       const pct = ((v - 1) / (60 - 1)) * 100;
       slider.style.backgroundSize = `${pct}% 100%`;
@@ -291,6 +329,7 @@
       const mins = parseInt(slider.value, 10);
       await chrome.runtime.sendMessage({ type: 'PAY_TOLL', minutes: mins });
       dismissToll();
+      refreshCountdown();
     });
 
     cdFill.style.transition = `transform ${decisionSeconds}s linear`;
@@ -310,6 +349,7 @@
     tollTimeout = setTimeout(async () => {
       await chrome.runtime.sendMessage({ type: 'PAY_TOLL', minutes: defaultMinutes });
       dismissToll(true);
+      refreshCountdown();
     }, decisionSeconds * 1000);
   }
 
@@ -336,6 +376,81 @@
   let borderEl = null;
   let toastEl = null;
 
+  let countdownEl = null;
+  let countdownTimer = null;
+  let countdownExpiresAt = 0;
+
+  function fmt(ms) {
+    if (ms < 0) ms = 0;
+    const total = Math.ceil(ms / 1000);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+
+  function ensureCountdown() {
+    if (countdownEl) return countdownEl;
+    countdownEl = document.createElement('div');
+    countdownEl.className = 'countdown-bar';
+    countdownEl.innerHTML = `
+      <span class="cb-dot"></span>
+      <span class="cb-label">Time Left</span>
+      <span class="cb-time" id="cbTime">--:--</span>
+    `;
+    shadow.appendChild(countdownEl);
+    requestAnimationFrame(() => countdownEl.classList.add('show'));
+    return countdownEl;
+  }
+
+  function hideCountdown() {
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    if (countdownEl) {
+      const el = countdownEl;
+      el.classList.remove('show');
+      setTimeout(() => el.remove(), 300);
+      countdownEl = null;
+    }
+  }
+
+  function tickCountdown() {
+    if (!countdownEl) return;
+    const timeEl = countdownEl.querySelector('#cbTime');
+    const remaining = countdownExpiresAt - Date.now();
+    if (remaining <= 0) {
+      countdownEl.classList.remove('warn');
+      countdownEl.classList.add('expired');
+      timeEl.textContent = 'EXPIRED';
+    } else {
+      countdownEl.classList.remove('expired');
+      countdownEl.classList.toggle('warn', remaining <= 60_000);
+      timeEl.textContent = fmt(remaining);
+    }
+  }
+
+  function startCountdown(expiresAt, expired = false) {
+    ensureCountdown();
+    countdownExpiresAt = expiresAt;
+    if (expired) {
+      countdownEl.classList.add('expired');
+      countdownEl.querySelector('#cbTime').textContent = 'EXPIRED';
+    }
+    tickCountdown();
+    if (countdownTimer) clearInterval(countdownTimer);
+    countdownTimer = setInterval(tickCountdown, 1000);
+  }
+
+  async function refreshCountdown() {
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'CHECK_TAB' });
+      if (res?.tab) {
+        startCountdown(res.tab.expiresAt, !!res.tab.expired);
+      } else {
+        hideCountdown();
+      }
+    } catch {}
+  }
+
+
   function applyExpiration() {
     const html = document.documentElement;
     html.style.transition = 'filter 1.5s ease';
@@ -345,6 +460,12 @@
       borderEl = document.createElement('div');
       borderEl.className = 'expire-border';
       shadow.appendChild(borderEl);
+    }
+
+    if (countdownEl) {
+      countdownEl.classList.add('expired');
+      const t = countdownEl.querySelector('#cbTime');
+      if (t) t.textContent = 'EXPIRED';
     }
 
     showToast();
@@ -359,7 +480,10 @@
       setTimeout(() => t.remove(), 300);
       toastEl = null;
     }
+    if (countdownEl) countdownEl.classList.remove('expired');
+    refreshCountdown();
   }
+
 
   function showToast() {
     if (toastEl) return;
@@ -394,6 +518,7 @@
     try {
       const res = await chrome.runtime.sendMessage({ type: 'CHECK_TAB' });
       if (res?.tab) {
+        startCountdown(res.tab.expiresAt, !!res.tab.expired);
         if (res.tab.expired || res.now >= res.tab.expiresAt) {
           applyExpiration();
         }
